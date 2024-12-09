@@ -5,7 +5,7 @@ library(magrittr)
 library(VGAM)
 
 # Parameters
-eps <- 10
+eps <- 0.1
 beta <- 0.5
 alpha_1 <- beta * eps # Level of diff-privacy for Bayesian network-generation
 alpha_2 <- (1 - beta) * eps # Level of diff-privacy for noise injected in conditional props
@@ -61,7 +61,7 @@ I <- function(node, parents) {
     as.data.frame %>% 
     table %>% 
     prop.table %>% 
-    entropy
+    entropy(method = "ML")
   
   # Distribution of Y
   Y_entropy <-
@@ -69,7 +69,7 @@ I <- function(node, parents) {
     as.data.frame %>% 
     table %>% 
     prop.table %>% 
-    entropy
+    entropy(method = "ML")
   
   # Distribution of the attribute
   X_entropy <-
@@ -77,7 +77,7 @@ I <- function(node, parents) {
     as.data.frame %>% 
     table %>% 
     prop.table %>% 
-    entropy
+    entropy(method = "ML")
   
   # I(X, Y) = H(X) + H(Y) - H((X, Y))
   return(X_entropy + Y_entropy - joint_entropy)
@@ -125,31 +125,81 @@ for(i in 2:d) {
 # Estimate the noisy conditionals based on the structure of the Bayesian net-
 # work obtained in the former section. Injects noise using the Laplace-mechanism
 conditional_props <- list()
-conditional_props[[1]] <- table(X[,1])[2] / n
+conditional_props[[1]] <- table(X[,1]) / n
+
+# Takes a probability table representing a joint distribution. Marginalizes first
+# variable out, and returns probability table representing joint distribution of
+# the rest of the variables
+marginalizeFirstVar <- function(tab) {
+  temp <- array(dim = dim(tab)[-1])
+  
+  temp_entries <-
+    temp %>% 
+    dim %>% 
+    lapply(seq_len) %>% 
+    expand.grid
+  
+  for(i in 1:nrow(temp_entries)) {
+    temp_coord <- temp_entries[i, ] %>% as.numeric
+    temp <-
+      do.call("[<-",
+              c(list(temp), 
+                as.list(temp_coord),
+                list(  
+                  do.call("[", c(list(tab), c(list(TRUE), temp_coord))) %>% 
+                  sum
+                ))
+      )
+  }
+  
+  return(temp)
+}
 
 # Constructs arrays that resemble the conditional distributions of the attri-
 # butes
-for(i in 2:length(N)) {
-  temp <- table(as.data.frame(X[, c(N[[i]]$node, 
-                                    N[[i]]$parents)])) / n
-  indices <- c(list(2), rep(TRUE, length(dim(temp)) - 1))
+for(i in 2:d) {
+  conditional_props[[i]] <- table(as.data.frame(X[, c(N[[i]]$node, 
+                                                      N[[i]]$parents)])) / n
+  marg_density <- marginalizeFirstVar(conditional_props[[i]])
+  indices_1 <- c(list(1), rep(TRUE, length(dim(conditional_props[[i]])) - 1))
+  indices_2 <- c(list(2), rep(TRUE, length(dim(conditional_props[[i]])) - 1))
+    
   conditional_props[[i]] <-
-    do.call("[", c(list(temp), indices))
+    do.call("[<-",
+            c(list(conditional_props[[i]]),
+              indices_1,
+              list(
+                do.call("[",
+                        c(list(conditional_props[[i]]),
+                          indices_1)) /
+                  marg_density
+                )))
+  
+  conditional_props[[i]] <-
+    do.call("[<-",
+            c(list(conditional_props[[i]]),
+              indices_2,
+              list(
+                do.call("[",
+                        c(list(conditional_props[[i]]),
+                          indices_2)) /
+                  marg_density
+              )))
 }
 
 # Inject Laplace-noise into the arrays
-for(i in 1:length(N)) {
+for(i in 1:d) {
   if(is.numeric(conditional_props[[i]])) {
     conditional_props[[i]] <-
       conditional_props[[i]] +
       rlaplace(length(conditional_props[[i]]),
                location = 0,
-               scale = 1 / n * 2 * length(conditional_props[[i]]) / alpha_2)
+               scale = d / n * 2 / alpha_2)
   } else {
     laplace <- 
       dim(conditional_props[[i]]) %>% 
       prod %>% 
-      rlaplace(scale = 1 / n * 2^(1 + length(dim(conditional_props[[i]]))) / 
+      rlaplace(scale = d / n * 2^length(dim(conditional_props[[i]])) / 
                  alpha_2) %>% 
       array(dim = dim(conditional_props[[i]]))
     
@@ -157,9 +207,16 @@ for(i in 1:length(N)) {
       conditional_props[[i]] + laplace
   }
   
-  # If estimate is below zero set to zero, and if above one set to one
+  # If estimate is below zero set to zero, and normalize
   conditional_props[[i]][conditional_props[[i]] < 0] <- 0
-  conditional_props[[i]][conditional_props[[i]] > 1] <- 1
+  indices_1 <- c(list(1), rep(TRUE, length(dim(conditional_props[[i]])) - 1))
+  indices_2 <- c(list(2), rep(TRUE, length(dim(conditional_props[[i]])) - 1))
+  normalizing_const <- 1 / (do.call("[", c(list(conditional_props[[i]]), indices_1)) +
+                              do.call("[", c(list(conditional_props[[i]]), indices_2)))
+  conditional_props[[i]] <- do.call("[", c(list(conditional_props[[i]]), indices_2)) *
+    normalizing_const
+  conditional_props[[i]][is.infinite(conditional_props[[i]])] <- 1
+  conditional_props[[i]][is.nan(conditional_props[[i]])] <- 0
 }
 
 ######################## Sample a synthetic dataset ############################

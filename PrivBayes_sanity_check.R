@@ -157,51 +157,6 @@ PrivBayes_sanity <- function(eps) {
                    ]])
   }
   
-  # Estimate the noisy conditionals based on the structure of the Bayesian net-
-  # work obtained in the former section. Injects noise using the Laplace-mechanism
-  conditional_props <- list()
-  conditional_props[[1]] <- table(X[,1])[2] / n
-  
-  # Constructs arrays that resemble the conditional distributions of the attri-
-  # butes
-  for(i in 2:length(N)) {
-    temp <- table(as.data.frame(X[, c(N[[i]]$node, 
-                                      N[[i]]$parents)])) / n
-    indices <- c(list(2), rep(TRUE, length(dim(temp)) - 1))
-    conditional_props[[i]] <-
-      do.call("[", c(list(temp), indices))
-  }
-  
-  # Inject Laplace-noise into the arrays
-  for(i in 1:length(N)) {
-    if(is.numeric(conditional_props[[i]])) {
-      conditional_props[[i]] <-
-        conditional_props[[i]] +
-        rlaplace(length(conditional_props[[i]]),
-                 location = 0,
-                 scale = d / n * 2 * length(conditional_props[[i]]) / alpha_2)
-    } else {
-      laplace <- 
-        dim(conditional_props[[i]]) %>% 
-        prod %>% 
-        rlaplace(scale = d / n * 2^(1 + length(dim(conditional_props[[i]]))) / 
-                   alpha_2) %>% 
-        array(dim = dim(conditional_props[[i]]))
-      
-      conditional_props[[i]] <- 
-        conditional_props[[i]] + laplace
-    }
-    
-    # If estimate is below zero set to zero, and if above one set to one
-    conditional_props[[i]][conditional_props[[i]] < 0] <- 0
-    conditional_props[[i]][conditional_props[[i]] > 1] <- 1
-  }
-  
-  Z <- matrix(ncol = d, nrow = M)
-  for(i in 1:M) {
-    Z[i,] <- sampleObservation()
-  }
-  
   # Fit a Bayesian network using a greedy algorithm
   N_greedy <- list()                              # Init the Bayesian network.
   N_greedy[[1]] <- list(node = 1, parents = NULL) # First node has no ancestors.
