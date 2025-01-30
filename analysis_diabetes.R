@@ -11,10 +11,10 @@ X <-
   as.matrix
 
 # Parameters
-eps <- 0.1
+alpha <- 10 # Level of differential privacy
 beta <- 0.5
-alpha_1 <- beta * eps       # Level of diff-privacy for Bayesian network-generation
-alpha_2 <- (1 - beta) * eps # Level of diff-privacy for noise injected in conditional props
+alpha_1 <- beta * alpha       # Level of diff-privacy for Bayesian network-generation
+alpha_2 <- (1 - beta) * alpha # Level of diff-privacy for noise injected in conditional props
 k <- 2                      # Degree of the Bayesian network
 M <- nrow(X) # Number synthetic samples
 n <- nrow(X) # Number of rows in original dataset
@@ -229,6 +229,6 @@ X %<>% as.data.frame
 
 ################################### Analysis ###################################
 fit_X <- glm(Outcome ~ ., data = X, family = "binomial")
-fit_Y <- glm(Outcome ~ ., data = Z, family = "binomial")
+fit_Z <- glm(Outcome ~ ., data = Z, family = "binomial")
 fit_X %>% summary
-fit_Y %>% summary
+fit_Z %>% summary
